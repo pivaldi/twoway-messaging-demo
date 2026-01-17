@@ -1,14 +1,22 @@
 # Twoway Messaging Demo
 
-A demonstration of secure two-way encrypted messaging using the [openpcc/twoway](https://github.com/openpcc/twoway) library. This project showcases authenticated, encrypted peer-to-peer communication over TCP.
+A demonstration of secure two-way encrypted messaging using the
+[openpcc/twoway](https://github.com/openpcc/twoway) library. This project
+showcases authenticated, encrypted peer-to-peer communication over TCP.
 
 ## Features
 
-- **Ed25519-signed HELLO**: Challenge/response authentication prevents replay attacks. Each peer's identity is verified against pinned public keys derived from hardcoded seeds.
-- **HPKE Encryption**: Messages are encrypted using Hybrid Public Key Encryption (X25519 + AES-128-GCM).
-- **Connection Reuse**: One outgoing TCP connection per peer, kept open for the session lifetime.
-- **Request Multiplexing**: Multiple in-flight requests share the same TCP connection, matched by RequestID.
-- **Interactive REPL**: Send messages and receive replies through an interactive console.
+- **Ed25519-signed HELLO**: Challenge/response authentication prevents replay
+  attacks. Each peer's identity is verified against pinned public keys derived
+  from hardcoded seeds.
+- **HPKE Encryption**: Messages are encrypted using Hybrid Public Key Encryption
+  (X25519 + AES-128-GCM).
+- **Connection Reuse**: One outgoing TCP connection per peer, kept open for the
+  session lifetime.
+- **Request Multiplexing**: Multiple in-flight requests share the same TCP
+  connection, matched by RequestID.
+- **Interactive REPL**: Send messages and receive replies through an interactive
+  console.
 
 ## Quick Start
 
@@ -81,5 +89,5 @@ reply> Hi alice!
 
 ## Dependencies
 
-- [cloudflare/circl](https://github.com/cloudflare/circl) - Cryptographic primitives (HPKE, Ed25519)
-- [openpcc/twoway](https://github.com/openpcc/twoway) - Two-way encrypted messaging protocol
+- [cloudflare/circl](https://github.com/cloudflare/circl): Cryptographic primitives (HPKE, Ed25519)
+- [openpcc/twoway](https://github.com/openpcc/twoway): Two-way encrypted messaging protocol
