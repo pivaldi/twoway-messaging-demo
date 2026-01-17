@@ -91,3 +91,7 @@ reply> Hi alice!
 
 - [cloudflare/circl](https://github.com/cloudflare/circl): Cryptographic primitives (HPKE, Ed25519)
 - [openpcc/twoway](https://github.com/openpcc/twoway): Two-way encrypted messaging protocol
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
