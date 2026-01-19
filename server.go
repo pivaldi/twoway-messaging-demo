@@ -75,7 +75,7 @@ func runServer(console *console, suite hpke.Suite, kemScheme kem.Scheme, self Pe
 				return
 			}
 
-			console.Printf("[net] inbound connection from %s\n", hello.SenderID)
+			console.AddHistory(fmt.Sprintf("[net] inbound connection from %s", hello.SenderID))
 
 			// Loop: handle multiple requests on the same TCP connection.
 			for {
@@ -107,12 +107,19 @@ func runServer(console *console, suite hpke.Suite, kemScheme kem.Scheme, self Pe
 					return
 				}
 
-				// Ask the user for a response.
-				prompt := fmt.Sprintf("\n[from %s] %s\nreply> ", hello.SenderID, string(plain))
-				reply, ok := console.Ask(prompt)
-				if !ok {
-					return
+				// Check if this is a broadcast or direct message
+				msgText := string(plain)
+				if strings.HasPrefix(msgText, "[BROADCAST]") {
+					// Broadcast message - only add to history, not queue
+					actualMsg := strings.TrimPrefix(msgText, "[BROADCAST]")
+					console.AddHistory(fmt.Sprintf("[broadcast from %s] %s", hello.SenderID, actualMsg))
+				} else {
+					// Direct message - add to both queue and history
+					console.AddDirectMessage(PeerID(hello.SenderID), msgText)
 				}
+
+				// Auto-respond with "message received" to satisfy protocol
+				reply := "message received"
 
 				respMediaType := []byte("text/plain; purpose=resp")
 				respSealer, err := reqOpener.NewResponseSealer(strings.NewReader(reply), respMediaType)

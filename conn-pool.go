@@ -117,18 +117,21 @@ func (p *connPool) SendRequest(to PeerInfo, msg string) (string, error) {
 func (p *connPool) Broadcast(self PeerInfo, msg string) error {
 	var g errgroup.Group
 
+	// Tag broadcast messages with a special prefix
+	broadcastMsg := "[BROADCAST]" + msg
+
 	for _, peer := range peers {
 		if peer.ID == self.ID {
 			continue
 		}
 		to := peer
 		g.Go(func() error {
-			respText, err := p.SendRequest(to, msg)
+			respText, err := p.SendRequest(to, broadcastMsg)
 			if err != nil {
 				return fmt.Errorf("to %s: %w", to.ID, err)
 			}
 
-			p.console.Printf("[reply from %s] %s\n", to.ID, respText)
+			p.console.Printf("[reply from %s] %s", to.ID, respText)
 			return nil
 		})
 	}
@@ -178,7 +181,24 @@ func dialAndHandshake(console *console, kemScheme kem.Scheme, self PeerInfo, to 
 	}
 	go ps.readLoop()
 
-	console.Printf("[net] connected to %s (%s)\n", to.ID, to.Addr)
+	console.AddHistory(fmt.Sprintf("[net] connected to %s (%s)", to.ID, to.Addr))
 	_ = kemScheme // kept for symmetry / future use
 	return ps, nil
+}
+
+// AnnouncePresence establishes connections to all other peers to announce this peer is online
+func (p *connPool) AnnouncePresence(self PeerInfo) {
+	for _, peer := range peers {
+		if peer.ID == self.ID {
+			continue
+		}
+
+		// Establish connection by getting a session (this triggers handshake)
+		_, err := p.get(peer)
+		if err != nil {
+			// Silently ignore connection failures during announcement
+			// Peer might not be online yet
+			continue
+		}
+	}
 }
