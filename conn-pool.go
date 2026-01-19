@@ -14,6 +14,7 @@ import (
 	"github.com/cloudflare/circl/hpke"
 	"github.com/cloudflare/circl/kem"
 	"github.com/openpcc/twoway"
+	"golang.org/x/sync/errgroup"
 )
 
 // -------------------- Connection reuse + multiplexing --------------------
@@ -114,35 +115,25 @@ func (p *connPool) SendRequest(to PeerInfo, msg string) (string, error) {
 }
 
 func (p *connPool) Broadcast(self PeerInfo, msg string) error {
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(peers))
+	var g errgroup.Group
 
 	for _, peer := range peers {
 		if peer.ID == self.ID {
 			continue
 		}
 		to := peer
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		g.Go(func() error {
 			respText, err := p.SendRequest(to, msg)
 			if err != nil {
-				errCh <- fmt.Errorf("to %s: %w", to.ID, err)
-				return
+				return fmt.Errorf("to %s: %w", to.ID, err)
 			}
 
 			p.console.Printf("[reply from %s] %s\n", to.ID, respText)
-		}()
+			return nil
+		})
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	// Return first error if any (you can aggregate if you prefer).
-	for err := range errCh {
-		return err
-	}
-	return nil
+	return g.Wait()
 }
 
 func dialAndHandshake(console *console, kemScheme kem.Scheme, self PeerInfo, to PeerInfo, selfEdPriv ed25519.PrivateKey, selfHPKEPubBytes []byte) (*peerSession, error) {

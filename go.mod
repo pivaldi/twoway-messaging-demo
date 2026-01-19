@@ -10,5 +10,6 @@ require (
 require (
 	github.com/quic-go/quic-go v0.57.1 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
 )
