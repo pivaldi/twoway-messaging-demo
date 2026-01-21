@@ -1,35 +1,80 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 )
 
-// For a demo, we make identities stable across runs by deriving keys from seeds.
-// In real systems, you'd generate keys randomly and distribute public keys out-of-band.
-
+// PeerID is now the nickname (string identifier for the peer)
 type PeerID string
 
+// PeerInfo holds information about a discovered peer
 type PeerInfo struct {
-	ID    PeerID
-	KeyID byte
-	Addr  string
-	Seed  []byte // 32 bytes: used to derive both Ed25519 and HPKE keys deterministically
+	Nickname PeerID
+	PeerID   peer.ID                // libp2p peer ID
+	Addrs    []multiaddr.Multiaddr  // peer's addresses
+	HPKEPub  []byte                 // HPKE public key for encryption
+	KeyID    byte                   // key identifier
 }
 
-var peers = []PeerInfo{
-	{ID: "alice", KeyID: 1, Addr: "127.0.0.1:9201", Seed: bytes.Repeat([]byte{0xA1}, 32)},
-	{ID: "bob", KeyID: 2, Addr: "127.0.0.1:9202", Seed: bytes.Repeat([]byte{0xB2}, 32)},
-	{ID: "carol", KeyID: 3, Addr: "127.0.0.1:9203", Seed: bytes.Repeat([]byte{0xC3}, 32)},
+// PeerTable manages dynamically discovered peers
+type PeerTable struct {
+	mu    sync.RWMutex
+	peers map[PeerID]*PeerInfo
+}
+
+// NewPeerTable creates a new peer table
+func NewPeerTable() *PeerTable {
+	return &PeerTable{
+		peers: make(map[PeerID]*PeerInfo),
+	}
+}
+
+// Add adds or updates a peer in the table
+func (pt *PeerTable) Add(info PeerInfo) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.peers[info.Nickname] = &info
+}
+
+// Remove removes a peer from the table
+func (pt *PeerTable) Remove(nickname PeerID) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	delete(pt.peers, nickname)
+}
+
+// Get retrieves a peer by nickname
+func (pt *PeerTable) Get(nickname PeerID) (PeerInfo, bool) {
+	pt.mu.RLock()
+	defer pt.mu.RUnlock()
+	p, ok := pt.peers[nickname]
+	if !ok {
+		return PeerInfo{}, false
+	}
+	return *p, true
+}
+
+// All returns all peers in the table
+func (pt *PeerTable) All() []PeerInfo {
+	pt.mu.RLock()
+	defer pt.mu.RUnlock()
+	result := make([]PeerInfo, 0, len(pt.peers))
+	for _, p := range pt.peers {
+		result = append(result, *p)
+	}
+	return result
 }
 
 type peerSession struct {
-	to PeerInfo
-	c  net.Conn
+	to     PeerInfo
+	stream network.Stream
 
 	writeMu sync.Mutex
 
@@ -47,7 +92,7 @@ func (ps *peerSession) isAlive() bool {
 
 func (ps *peerSession) failAll() {
 	if ps.dead.CompareAndSwap(false, true) {
-		_ = ps.c.Close()
+		_ = ps.stream.Close()
 	}
 
 	ps.pendingMu.Lock()
@@ -60,7 +105,7 @@ func (ps *peerSession) failAll() {
 
 func (ps *peerSession) readLoop() {
 	for {
-		typ, payload, err := readMsg(ps.c)
+		typ, payload, err := readMsg(ps.stream)
 		if err != nil {
 			ps.failAll()
 			return
@@ -100,7 +145,7 @@ func (ps *peerSession) DoRequest(req Request) (Response, error) {
 	ps.pendingMu.Unlock()
 
 	ps.writeMu.Lock()
-	err := writeMsg(ps.c, msgRequest, encodeRequest(req))
+	err := writeMsg(ps.stream, msgRequest, encodeRequest(req))
 	ps.writeMu.Unlock()
 	if err != nil {
 		ps.pendingMu.Lock()
@@ -116,17 +161,7 @@ func (ps *peerSession) DoRequest(req Request) (Response, error) {
 	return resp, nil
 }
 
-// -------------------- Peer table helpers --------------------
-
-func mustPeer(id PeerID) PeerInfo {
-	for _, p := range peers {
-		if p.ID == id {
-			return p
-		}
-	}
-
-	panic("unknown peer: " + string(id))
-}
+// -------------------- Helpers --------------------
 
 func splitFirstWord(s string) (first string, rest string, ok bool) {
 	before, after, ok0 := strings.Cut(s, " ")

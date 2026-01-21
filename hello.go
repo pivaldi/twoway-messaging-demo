@@ -17,29 +17,49 @@ type Hello struct {
 	Signature     []byte // 64 bytes
 }
 
+// verifySignedHello verifies the signature on a Hello message.
+// In the new architecture, keys are received from the discovery node.
+// This function verifies the signature matches the Ed25519 public key in the Hello.
+// If peerTable is provided, it also verifies against known peer info.
 func verifySignedHello(kemScheme kem.Scheme, challenge []byte, h Hello) error {
-	p := mustPeer(h.SenderID)
-	if h.SenderKeyID != p.KeyID {
-		return fmt.Errorf("keyID mismatch for %s: got %d want %d", h.SenderID, h.SenderKeyID, p.KeyID)
+	// Basic validation
+	if len(h.SenderEdPub) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid Ed25519 pubkey size: %d", len(h.SenderEdPub))
 	}
-
-	_, expectedEdPub := deriveEd25519(p.Seed)
-	if !bytes.Equal(h.SenderEdPub, expectedEdPub) {
-		return fmt.Errorf("Ed25519 pubkey mismatch for %s", h.SenderID)
-	}
-
-	expectedHPKEPub, _ := deriveHPKEX25519(kemScheme, p.Seed)
-	expectedHPKEPubBytes := mustMarshalHPKEPub(expectedHPKEPub)
-	if !bytes.Equal(h.SenderHPKEPub, expectedHPKEPubBytes) {
-		return fmt.Errorf("HPKE pubkey mismatch for %s", h.SenderID)
-	}
-
 	if len(h.Signature) != ed25519.SignatureSize {
 		return fmt.Errorf("bad signature length")
 	}
+
+	// Verify signature against the public key in the Hello
 	if !ed25519.Verify(ed25519.PublicKey(h.SenderEdPub), helloSignInput(challenge, h), h.Signature) {
 		return fmt.Errorf("invalid signature for %s", h.SenderID)
 	}
+
+	return nil
+}
+
+// verifySignedHelloWithTable verifies the signature and cross-checks with the peer table.
+func verifySignedHelloWithTable(kemScheme kem.Scheme, challenge []byte, h Hello, peerTable *PeerTable) error {
+	// First do basic signature verification
+	if err := verifySignedHello(kemScheme, challenge, h); err != nil {
+		return err
+	}
+
+	// If we have a peer table, verify against known peer info
+	if peerTable != nil {
+		peer, ok := peerTable.Get(h.SenderID)
+		if ok {
+			// Verify key ID matches
+			if h.SenderKeyID != peer.KeyID {
+				return fmt.Errorf("keyID mismatch for %s: got %d want %d", h.SenderID, h.SenderKeyID, peer.KeyID)
+			}
+			// Verify HPKE public key matches
+			if !bytes.Equal(h.SenderHPKEPub, peer.HPKEPub) {
+				return fmt.Errorf("HPKE pubkey mismatch for %s", h.SenderID)
+			}
+		}
+	}
+
 	return nil
 }
 

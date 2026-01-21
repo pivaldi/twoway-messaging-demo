@@ -305,14 +305,14 @@ func (c *console) drawText(x, y, maxWidth int, text string, style tcell.Style) {
 	}
 }
 
-func (c *console) Usage(p PeerInfo, selfEdPub ed25519.PublicKey, selfHPKEPubBytes []byte) {
-	c.AddHistory(fmt.Sprintf("[%s] up at %s (keyID=%d)", p.ID, p.Addr, p.KeyID))
-	c.AddHistory(fmt.Sprintf("[%s] pinned Ed25519 pub: %x", p.ID, selfEdPub))
-	c.AddHistory(fmt.Sprintf("[%s] pinned HPKE pub:    %x", p.ID, selfHPKEPubBytes))
+func (c *console) Usage(nickname PeerID, keyID byte, selfEdPub ed25519.PublicKey, selfHPKEPubBytes []byte, peerID string) {
+	c.AddHistory(fmt.Sprintf("[%s] up with peerID=%s (keyID=%d)", nickname, peerID, keyID))
+	c.AddHistory(fmt.Sprintf("[%s] pinned Ed25519 pub: %x", nickname, selfEdPub))
+	c.AddHistory(fmt.Sprintf("[%s] pinned HPKE pub:    %x", nickname, selfHPKEPubBytes))
 	c.AddHistory("")
 	c.AddHistory("Commands:")
 	c.AddHistory("  @peer message   send a request")
-	c.AddHistory("  /peers          list peers")
+	c.AddHistory("  /peers          list online peers")
 	c.AddHistory("  /quit           exit")
 	c.AddHistory("")
 }
@@ -391,7 +391,7 @@ func (c *console) ReadLine() (string, bool) {
 }
 
 // REPL runs the main input loop
-func (c *console) RPEL(p PeerInfo, pool *connPool) {
+func (c *console) REPL(pool *connPool) {
 	for {
 		line, ok := c.ReadLine()
 		if !ok {
@@ -408,7 +408,6 @@ func (c *console) RPEL(p PeerInfo, pool *connPool) {
 			return
 		case "/peers":
 			c.listPeers()
-
 			continue
 		}
 
@@ -421,24 +420,33 @@ func (c *console) RPEL(p PeerInfo, pool *connPool) {
 			}
 
 			toTag = strings.TrimPrefix(toTag, "@")
-			to := mustPeer(PeerID(toTag))
+			to, found := pool.peerTable.Get(PeerID(toTag))
+			if !found {
+				c.Errorf("unknown peer: %s", toTag)
+				continue
+			}
 			c.sendTo(to, msg)
 			continue
 		}
 
 		// Otherwise: broadcast to everyone else.
-		count := len(pool.sessions)
-		if err := pool.Broadcast(p, line); err != nil {
+		count := len(pool.peerTable.All())
+		if err := pool.Broadcast(line); err != nil {
 			c.Errorf("broadcast failed: %v", err)
 		} else {
-			c.Printf("[broadcast] %s sent to %d peers: %s", c.self.ID, count, line)
+			c.Printf("[broadcast] %s sent to %d peers: %s", c.self.Nickname, count, line)
 		}
 	}
 }
 
 func (c *console) listPeers() {
+	peers := c.pool.peerTable.All()
+	if len(peers) == 0 {
+		c.Printf("No online peers")
+		return
+	}
 	for _, p := range peers {
-		c.Printf("- %s (%s) keyID=%d", p.ID, p.Addr, p.KeyID)
+		c.Printf("- %s (peerID=%s) keyID=%d", p.Nickname, p.PeerID.ShortString(), p.KeyID)
 	}
 }
 
@@ -447,18 +455,18 @@ func (c *console) sendTo(to PeerInfo, msg string) {
 		return
 	}
 
-	if to.ID == c.self.ID {
+	if to.Nickname == c.self.Nickname {
 		c.Errorf("can't send to self")
 		return
 	}
 
 	// Clear queue for this peer
-	_ = c.ClearQueue(to.ID)
+	_ = c.ClearQueue(to.Nickname)
 	_, err := c.pool.SendRequest(to, msg)
 	if err != nil {
 		c.Errorf("send failed: %v", err)
 		return
 	}
 
-	c.Printf("[%s to %s] %s", c.self.ID, to.ID, msg)
+	c.Printf("[%s to %s] %s", c.self.Nickname, to.Nickname, msg)
 }
