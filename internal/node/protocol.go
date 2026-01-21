@@ -13,6 +13,9 @@ import (
 // ProtocolID for node discovery
 const ProtocolID = "/tmd/node/1.0.0"
 
+// KeyIDSize is the size of key fingerprints in bytes.
+const KeyIDSize = 8
+
 // Message types
 const (
 	MsgRegister     byte = 1
@@ -28,7 +31,7 @@ type Register struct {
 	Nickname string
 	Token    string
 	HPKEPub  []byte
-	KeyID    byte
+	KeyID    []byte // 8-byte key fingerprint
 }
 
 // RegisterOK confirms successful registration.
@@ -47,7 +50,7 @@ type PeerInfo struct {
 	PeerID   peer.ID
 	Addrs    []multiaddr.Multiaddr
 	HPKEPub  []byte
-	KeyID    byte
+	KeyID    []byte // 8-byte key fingerprint
 }
 
 // PeerList is sent to new peers with all online peers.
@@ -61,7 +64,7 @@ type PeerJoined struct {
 	PeerID   peer.ID
 	Addrs    []multiaddr.Multiaddr
 	HPKEPub  []byte
-	KeyID    byte
+	KeyID    []byte // 8-byte key fingerprint
 }
 
 // PeerLeft is broadcast when a peer goes offline.
@@ -147,7 +150,7 @@ func EncodeRegister(r *Register) []byte {
 	writeString(&b, r.Nickname)
 	writeString(&b, r.Token)
 	writeBlob(&b, r.HPKEPub)
-	b.WriteByte(r.KeyID)
+	writeBlob(&b, r.KeyID) // 8-byte key fingerprint
 	return b.Bytes()
 }
 
@@ -165,9 +168,12 @@ func DecodeRegister(data []byte) (*Register, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyID, err := r.ReadByte()
+	keyID, err := readBlob(r)
 	if err != nil {
 		return nil, err
+	}
+	if len(keyID) != KeyIDSize {
+		return nil, fmt.Errorf("invalid keyID size: %d", len(keyID))
 	}
 	return &Register{
 		Nickname: nickname,
@@ -206,7 +212,7 @@ func EncodePeerJoined(p *PeerJoined) []byte {
 		writeBlob(&b, addr.Bytes())
 	}
 	writeBlob(&b, p.HPKEPub)
-	b.WriteByte(p.KeyID)
+	writeBlob(&b, p.KeyID) // 8-byte key fingerprint
 	return b.Bytes()
 }
 
@@ -240,9 +246,12 @@ func DecodePeerJoined(data []byte) (*PeerJoined, error) {
 	if err != nil {
 		return nil, err
 	}
-	keyID, err := r.ReadByte()
+	keyID, err := readBlob(r)
 	if err != nil {
 		return nil, err
+	}
+	if len(keyID) != KeyIDSize {
+		return nil, fmt.Errorf("invalid keyID size: %d", len(keyID))
 	}
 	return &PeerJoined{
 		Nickname: nickname,

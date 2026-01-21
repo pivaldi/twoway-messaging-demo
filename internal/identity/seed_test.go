@@ -73,9 +73,9 @@ func TestDeriveKeys(t *testing.T) {
 		t.Fatal("invalid HPKE public key")
 	}
 
-	// Check KeyID is derived
-	if keys.KeyID == 0 {
-		t.Fatal("KeyID should not be zero")
+	// Check KeyID is 8 bytes
+	if len(keys.KeyID) != KeyIDSize {
+		t.Fatalf("expected KeyID of %d bytes, got %d", KeyIDSize, len(keys.KeyID))
 	}
 }
 

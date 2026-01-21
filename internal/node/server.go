@@ -46,7 +46,7 @@ type onlinePeer struct {
 	PeerID   peer.ID
 	Addrs    []multiaddr.Multiaddr
 	HPKEPub  []byte
-	KeyID    byte
+	KeyID    []byte // 8-byte key fingerprint
 }
 
 // NewServer creates a new node server.
@@ -58,7 +58,10 @@ func NewServer(h host.Host, cfg *Config) *Server {
 		streams: make(map[string]network.Stream),
 	}
 
-	h.SetStreamHandler(ProtocolID, s.handleStream)
+	// Wrap handler in goroutine to allow concurrent connections
+	h.SetStreamHandler(ProtocolID, func(stream network.Stream) {
+		go s.handleStream(stream)
+	})
 
 	return s
 }

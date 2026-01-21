@@ -30,7 +30,7 @@ type connPool struct {
 	suite            hpke.Suite
 	kemScheme        kem.Scheme
 	nickname         PeerID
-	keyID            byte
+	keyID            []byte // 8-byte key fingerprint
 	selfEdPriv       ed25519.PrivateKey
 	selfHPKEPubBytes []byte
 
@@ -38,7 +38,7 @@ type connPool struct {
 	sessions map[PeerID]*peerSession
 }
 
-func newConnPool(h host.Host, peerTable *PeerTable, suite hpke.Suite, kemScheme kem.Scheme, nickname PeerID, keyID byte, selfEdPriv ed25519.PrivateKey, selfHPKEPubBytes []byte) *connPool {
+func newConnPool(h host.Host, peerTable *PeerTable, suite hpke.Suite, kemScheme kem.Scheme, nickname PeerID, keyID []byte, selfEdPriv ed25519.PrivateKey, selfHPKEPubBytes []byte) *connPool {
 	return &connPool{
 		host:             h,
 		peerTable:        peerTable,
@@ -126,14 +126,15 @@ func (p *connPool) SendRequest(to PeerInfo, msg string) (string, error) {
 		return "", fmt.Errorf("unmarshal HPKE pub for %s: %w", to.Nickname, err)
 	}
 
-	encapKey, respOpenFn, err := reqSealer.EncapsulateKey(to.KeyID, toHPKEPub)
+	// Use first byte of KeyID for twoway library compatibility
+	encapKey, respOpenFn, err := reqSealer.EncapsulateKey(to.KeyID[0], toHPKEPub)
 	if err != nil {
 		return "", fmt.Errorf("EncapsulateKey(to=%s): %w", to.Nickname, err)
 	}
 
 	req := Request{
 		RequestID:      0, // set inside DoRequest
-		RecipientKeyID: to.KeyID,
+		RecipientKeyID: to.KeyID, // full 8-byte fingerprint
 		EncapKey:       encapKey,
 		MediaType:      reqMediaType,
 		Ciphertext:     reqCiphertext,

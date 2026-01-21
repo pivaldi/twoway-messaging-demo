@@ -17,10 +17,10 @@ type PeerID string
 // PeerInfo holds information about a discovered peer
 type PeerInfo struct {
 	Nickname PeerID
-	PeerID   peer.ID                // libp2p peer ID
-	Addrs    []multiaddr.Multiaddr  // peer's addresses
-	HPKEPub  []byte                 // HPKE public key for encryption
-	KeyID    byte                   // key identifier
+	PeerID   peer.ID               // libp2p peer ID
+	Addrs    []multiaddr.Multiaddr // peer's addresses
+	HPKEPub  []byte                // HPKE public key for encryption
+	KeyID    []byte                // 8-byte key fingerprint
 }
 
 // PeerTable manages dynamically discovered peers

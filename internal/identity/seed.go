@@ -44,6 +44,9 @@ func LoadSeed(path string) ([]byte, error) {
 	return seed, nil
 }
 
+// KeyIDSize is the size of the key fingerprint in bytes.
+const KeyIDSize = 8
+
 // DerivedKeys holds all keys derived from a seed.
 type DerivedKeys struct {
 	Ed25519Priv  ed25519.PrivateKey
@@ -51,7 +54,7 @@ type DerivedKeys struct {
 	HPKEPub      kem.PublicKey
 	HPKEPriv     kem.PrivateKey
 	HPKEPubBytes []byte
-	KeyID        byte
+	KeyID        []byte // 8-byte fingerprint of HPKE public key
 	Libp2pPriv   libp2pcrypto.PrivKey
 	Libp2pPub    libp2pcrypto.PubKey
 	PeerID       peer.ID
@@ -75,12 +78,10 @@ func DeriveKeys(seed []byte) (*DerivedKeys, error) {
 		return nil, fmt.Errorf("marshal HPKE pub: %w", err)
 	}
 
-	// KeyID from first byte of HPKE public key hash
+	// KeyID from first 8 bytes of HPKE public key hash
 	hash := sha256.Sum256(hpkePubBytes)
-	keyID := hash[0]
-	if keyID == 0 {
-		keyID = 1 // avoid zero KeyID
-	}
+	keyID := make([]byte, KeyIDSize)
+	copy(keyID, hash[:KeyIDSize])
 
 	// libp2p Ed25519 for transport (convert from std lib key)
 	libp2pPriv, libp2pPub, err := libp2pcrypto.KeyPairFromStdKey(&ed25519Priv)

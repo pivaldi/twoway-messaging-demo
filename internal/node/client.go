@@ -18,7 +18,7 @@ type Client struct {
 	nickname string
 	token    string
 	hpkePub  []byte
-	keyID    byte
+	keyID    []byte // 8-byte key fingerprint
 
 	mu      sync.RWMutex
 	nodes   map[peer.ID]*nodeConn    // node PeerID -> connection
@@ -47,7 +47,7 @@ type nodeConn struct {
 }
 
 // NewClient creates a new node client.
-func NewClient(h host.Host, nickname, token string, hpkePub []byte, keyID byte, handler PeerHandler) *Client {
+func NewClient(h host.Host, nickname, token string, hpkePub []byte, keyID []byte, handler PeerHandler) *Client {
 	return &Client{
 		host:     h,
 		nickname: nickname,

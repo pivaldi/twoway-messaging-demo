@@ -40,8 +40,8 @@ func runKeygen(args []string) error {
 	}
 
 	fmt.Printf("Seed written to %s\n", *outPath)
-	fmt.Printf("Your PeerID: %s\n", keys.PeerID)
-	fmt.Printf("Your HPKE KeyID: 0x%02x\n", keys.KeyID)
+	fmt.Printf("PeerID: %s\n", keys.PeerID)
+	fmt.Printf("HPKE KeyID: %x\n", keys.KeyID)
 
 	return nil
 }

@@ -305,8 +305,8 @@ func (c *console) drawText(x, y, maxWidth int, text string, style tcell.Style) {
 	}
 }
 
-func (c *console) Usage(nickname PeerID, keyID byte, selfEdPub ed25519.PublicKey, selfHPKEPubBytes []byte, peerID string) {
-	c.AddHistory(fmt.Sprintf("[%s] up with peerID=%s (keyID=%d)", nickname, peerID, keyID))
+func (c *console) Usage(nickname PeerID, keyID []byte, selfEdPub ed25519.PublicKey, selfHPKEPubBytes []byte, peerID string) {
+	c.AddHistory(fmt.Sprintf("[%s] up with peerID=%s (keyID=%x)", nickname, peerID, keyID))
 	c.AddHistory(fmt.Sprintf("[%s] pinned Ed25519 pub: %x", nickname, selfEdPub))
 	c.AddHistory(fmt.Sprintf("[%s] pinned HPKE pub:    %x", nickname, selfHPKEPubBytes))
 	c.AddHistory("")

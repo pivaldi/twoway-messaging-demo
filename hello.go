@@ -11,7 +11,7 @@ import (
 // Signed HELLO verification
 type Hello struct {
 	SenderID      PeerID
-	SenderKeyID   byte
+	SenderKeyID   []byte // 8-byte key fingerprint
 	SenderEdPub   []byte // 32 bytes
 	SenderHPKEPub []byte // 32 bytes for X25519 KEM public key
 	Signature     []byte // 64 bytes
@@ -50,8 +50,8 @@ func verifySignedHelloWithTable(kemScheme kem.Scheme, challenge []byte, h Hello,
 		peer, ok := peerTable.Get(h.SenderID)
 		if ok {
 			// Verify key ID matches
-			if h.SenderKeyID != peer.KeyID {
-				return fmt.Errorf("keyID mismatch for %s: got %d want %d", h.SenderID, h.SenderKeyID, peer.KeyID)
+			if !bytes.Equal(h.SenderKeyID, peer.KeyID) {
+				return fmt.Errorf("keyID mismatch for %s: got %x want %x", h.SenderID, h.SenderKeyID, peer.KeyID)
 			}
 			// Verify HPKE public key matches
 			if !bytes.Equal(h.SenderHPKEPub, peer.HPKEPub) {
@@ -64,12 +64,12 @@ func verifySignedHelloWithTable(kemScheme kem.Scheme, challenge []byte, h Hello,
 }
 
 func helloSignInput(challenge []byte, h Hello) []byte {
-	// signed bytes = challenge || senderID || keyID || edPub || hpkePub
+	// signed bytes = challenge || senderID || 0 || keyID (8 bytes) || edPub || hpkePub
 	var b bytes.Buffer
 	b.Write(challenge)
 	b.Write([]byte(h.SenderID))
 	b.WriteByte(0)
-	b.WriteByte(h.SenderKeyID)
+	b.Write(h.SenderKeyID) // 8-byte key fingerprint
 	b.Write(h.SenderEdPub)
 	b.Write(h.SenderHPKEPub)
 	return b.Bytes()

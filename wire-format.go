@@ -16,6 +16,9 @@ const (
 	msgGoodbye   byte = 5
 )
 
+// KeyIDSize is the size of key fingerprints in bytes.
+const KeyIDSize = 8
+
 // Message format: u32(len(type+payload)) || type(1) || payload
 func writeMsg(w io.Writer, typ byte, payload []byte) error {
 	total := uint32(1 + len(payload))
@@ -78,7 +81,7 @@ func readBlob(r io.Reader) ([]byte, error) {
 func encodeHello(h Hello) []byte {
 	var b bytes.Buffer
 	_ = writeBlob(&b, []byte(h.SenderID))
-	_ = writeBlob(&b, []byte{h.SenderKeyID})
+	_ = writeBlob(&b, h.SenderKeyID) // 8-byte key fingerprint
 	_ = writeBlob(&b, h.SenderEdPub)
 	_ = writeBlob(&b, h.SenderHPKEPub)
 	_ = writeBlob(&b, h.Signature)
@@ -92,12 +95,12 @@ func decodeHello(p []byte) (Hello, error) {
 	if err != nil {
 		return Hello{}, err
 	}
-	kb, err := readBlob(r)
+	keyID, err := readBlob(r)
 	if err != nil {
 		return Hello{}, err
 	}
-	if len(kb) != 1 {
-		return Hello{}, fmt.Errorf("bad keyID")
+	if len(keyID) != KeyIDSize {
+		return Hello{}, fmt.Errorf("bad keyID length: %d", len(keyID))
 	}
 	edPub, err := readBlob(r)
 	if err != nil {
@@ -114,7 +117,7 @@ func decodeHello(p []byte) (Hello, error) {
 
 	return Hello{
 		SenderID:      PeerID(id),
-		SenderKeyID:   kb[0],
+		SenderKeyID:   keyID,
 		SenderEdPub:   edPub,
 		SenderHPKEPub: hpkePub,
 		Signature:     sig,
@@ -123,7 +126,7 @@ func decodeHello(p []byte) (Hello, error) {
 
 type Request struct {
 	RequestID      uint64
-	RecipientKeyID byte
+	RecipientKeyID []byte // 8-byte key fingerprint
 	EncapKey       []byte
 	MediaType      []byte
 	Ciphertext     []byte
@@ -134,7 +137,7 @@ func encodeRequest(req Request) []byte {
 	var id [8]byte
 	binary.BigEndian.PutUint64(id[:], req.RequestID)
 	_ = writeBlob(&b, id[:])
-	_ = writeBlob(&b, []byte{req.RecipientKeyID})
+	_ = writeBlob(&b, req.RecipientKeyID) // 8-byte key fingerprint
 	_ = writeBlob(&b, req.EncapKey)
 	_ = writeBlob(&b, req.MediaType)
 	_ = writeBlob(&b, req.Ciphertext)
@@ -152,12 +155,12 @@ func decodeRequest(p []byte) (Request, error) {
 	}
 	id := binary.BigEndian.Uint64(idb)
 
-	rkid, err := readBlob(r)
+	keyID, err := readBlob(r)
 	if err != nil {
 		return Request{}, err
 	}
-	if len(rkid) != 1 {
-		return Request{}, fmt.Errorf("bad recipient keyID")
+	if len(keyID) != KeyIDSize {
+		return Request{}, fmt.Errorf("bad recipient keyID length: %d", len(keyID))
 	}
 	encap, err := readBlob(r)
 	if err != nil {
@@ -172,7 +175,7 @@ func decodeRequest(p []byte) (Request, error) {
 		return Request{}, err
 	}
 
-	return Request{RequestID: id, RecipientKeyID: rkid[0], EncapKey: encap, MediaType: mt, Ciphertext: ct}, nil
+	return Request{RequestID: id, RecipientKeyID: keyID, EncapKey: encap, MediaType: mt, Ciphertext: ct}, nil
 }
 
 func encodeResponse(resp Response) []byte {

@@ -20,7 +20,8 @@ type Response struct {
 
 // SetupStreamHandler sets up the libp2p stream handler for incoming messages
 func (p *connPool) SetupStreamHandler(selfHPKEPriv kem.PrivateKey) error {
-	receiver, err := twoway.NewMultiRequestReceiver(p.suite, p.keyID, selfHPKEPriv, rand.Reader)
+	// Use first byte of KeyID for twoway library compatibility
+	receiver, err := twoway.NewMultiRequestReceiver(p.suite, p.keyID[0], selfHPKEPriv, rand.Reader)
 	if err != nil {
 		return fmt.Errorf("error in NewMultiRequestReceiver: %w", err)
 	}
@@ -103,8 +104,8 @@ func (p *connPool) handleStream(stream network.Stream, receiver *twoway.MultiReq
 			return
 		}
 
-		if req.RecipientKeyID != p.keyID {
-			p.console.Printf("[%s] request for keyID=%d (expected %d)\n", p.nickname, req.RecipientKeyID, p.keyID)
+		if !bytes.Equal(req.RecipientKeyID, p.keyID) {
+			p.console.Printf("[%s] request for keyID=%x (expected %x)\n", p.nickname, req.RecipientKeyID, p.keyID)
 			return
 		}
 
