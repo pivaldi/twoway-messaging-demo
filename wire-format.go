@@ -7,13 +7,13 @@ import (
 	"io"
 )
 
-// -------------------- Wire format --------------------
-
+// Wire format
 const (
 	msgChallenge byte = 1
 	msgHello     byte = 2
 	msgRequest   byte = 3
 	msgResponse  byte = 4
+	msgGoodbye   byte = 5
 )
 
 // Message format: u32(len(type+payload)) || type(1) || payload
@@ -205,4 +205,24 @@ func decodeResponse(p []byte) (Response, error) {
 		return Response{}, err
 	}
 	return Response{RequestID: id, MediaType: mt, Ciphertext: ct}, nil
+}
+
+// Goodbye message: just the sender ID
+type Goodbye struct {
+	SenderID PeerID
+}
+
+func encodeGoodbye(g Goodbye) []byte {
+	var b bytes.Buffer
+	_ = writeBlob(&b, []byte(g.SenderID))
+	return b.Bytes()
+}
+
+func decodeGoodbye(p []byte) (Goodbye, error) {
+	r := bytes.NewReader(p)
+	id, err := readBlob(r)
+	if err != nil {
+		return Goodbye{}, err
+	}
+	return Goodbye{SenderID: PeerID(id)}, nil
 }

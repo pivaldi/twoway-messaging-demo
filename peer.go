@@ -41,9 +41,11 @@ type peerSession struct {
 	dead atomic.Bool
 }
 
-func (ps *peerSession) isAlive() bool { return !ps.dead.Load() }
+func (ps *peerSession) isAlive() bool {
+	return ps != nil && !ps.dead.Load()
+}
 
-func (ps *peerSession) failAll(err error) {
+func (ps *peerSession) failAll() {
 	if ps.dead.CompareAndSwap(false, true) {
 		_ = ps.c.Close()
 	}
@@ -60,7 +62,7 @@ func (ps *peerSession) readLoop() {
 	for {
 		typ, payload, err := readMsg(ps.c)
 		if err != nil {
-			ps.failAll(err)
+			ps.failAll()
 			return
 		}
 		if typ != msgResponse {
@@ -122,18 +124,21 @@ func mustPeer(id PeerID) PeerInfo {
 			return p
 		}
 	}
+
 	panic("unknown peer: " + string(id))
 }
 
 func splitFirstWord(s string) (first string, rest string, ok bool) {
-	i := strings.IndexByte(s, ' ')
-	if i < 0 {
+	before, after, ok0 := strings.Cut(s, " ")
+	if !ok0 {
 		return "", "", false
 	}
-	first = strings.TrimSpace(s[:i])
-	rest = strings.TrimSpace(s[i+1:])
+
+	first = strings.TrimSpace(before)
+	rest = strings.TrimSpace(after)
 	if first == "" || rest == "" {
 		return "", "", false
 	}
+
 	return first, rest, true
 }

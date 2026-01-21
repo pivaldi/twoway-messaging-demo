@@ -29,17 +29,22 @@ func main() {
 	selfHPKEPub, selfHPKEPriv := deriveHPKEX25519(kemScheme, self.Seed)
 	selfHPKEPubBytes := mustMarshalHPKEPub(selfHPKEPub)
 
+	// Connection pool for outgoing connections (reused).
+	pool := newConnPool(suite, kemScheme, self, selfEdPriv, selfHPKEPubBytes)
+
 	// Console manager with TUI.
-	console, err := newConsole()
+	console, err := newConsole(self, pool)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize TUI: %v\n", err)
 		os.Exit(1)
 	}
 	defer console.Close()
 
+	pool.setConsole(console)
+
 	// Start server to receive requests.
 	go func() {
-		if err := runServer(console, suite, kemScheme, self, selfHPKEPriv); err != nil {
+		if err := pool.RunServer(selfHPKEPriv); err != nil {
 			console.Printf("[%s] server error: %v\n", self.ID, err)
 		}
 	}()
@@ -48,14 +53,13 @@ func main() {
 
 	console.Usage(self, selfEdPub, selfHPKEPubBytes)
 
-	// Connection pool for outgoing connections (reused).
-	pool := newConnPool(console, suite, kemScheme, self, selfEdPriv, selfHPKEPubBytes)
-
 	// Announce presence to all other peers on startup
 	go func() {
 		time.Sleep(200 * time.Millisecond) // Give other peers time to start their servers
-		pool.AnnouncePresence(self)
+		pool.AnnouncePresence()
 	}()
+
+	defer pool.AnnounceDisconnexion() // Announce disconnection to all peers before exiting
 
 	console.RPEL(self, pool)
 }

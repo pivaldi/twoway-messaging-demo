@@ -24,14 +24,14 @@ type historyMessage struct {
 
 type console struct {
 	screen tcell.Screen
+	self   PeerInfo
+	pool   *connPool
 
 	// Message storage
-	queueMu       sync.Mutex
-	queue         map[PeerID][]queuedMessage // Unreplied messages per peer
-	historyMu     sync.Mutex
-	history       []historyMessage // All messages
-	queueScroll   int
-	historyScroll int
+	queueMu   sync.Mutex
+	queue     map[PeerID][]queuedMessage // Unreplied messages per peer
+	historyMu sync.Mutex
+	history   []historyMessage // All messages
 
 	// Input state
 	inputMu     sync.Mutex
@@ -46,7 +46,7 @@ type console struct {
 	quitCh  chan struct{}
 }
 
-func newConsole() (*console, error) {
+func newConsole(me PeerInfo, pool *connPool) (*console, error) {
 	screen, err := tcell.NewScreen()
 	if err != nil {
 		return nil, err
@@ -61,6 +61,8 @@ func newConsole() (*console, error) {
 
 	c := &console{
 		screen:  screen,
+		self:    me,
+		pool:    pool,
 		queue:   make(map[PeerID][]queuedMessage),
 		history: make([]historyMessage, 0),
 		inputCh: make(chan string, 10),
@@ -306,7 +308,7 @@ func (c *console) drawText(x, y, maxWidth int, text string, style tcell.Style) {
 func (c *console) Usage(p PeerInfo, selfEdPub ed25519.PublicKey, selfHPKEPubBytes []byte) {
 	c.AddHistory(fmt.Sprintf("[%s] up at %s (keyID=%d)", p.ID, p.Addr, p.KeyID))
 	c.AddHistory(fmt.Sprintf("[%s] pinned Ed25519 pub: %x", p.ID, selfEdPub))
-	c.AddHistory(fmt.Sprintf("[%s] pinned HPKE pub:     %x", p.ID, selfHPKEPubBytes))
+	c.AddHistory(fmt.Sprintf("[%s] pinned HPKE pub:    %x", p.ID, selfHPKEPubBytes))
 	c.AddHistory("")
 	c.AddHistory("Commands:")
 	c.AddHistory("  @peer message   send a request")
@@ -340,6 +342,10 @@ func (c *console) ClearQueue(peerID PeerID) int {
 
 // AddHistory adds a message to the general history pane
 func (c *console) AddHistory(text string) {
+	if c == nil {
+		return
+	}
+
 	c.historyMu.Lock()
 	// Strip trailing newlines
 	text = strings.TrimRight(text, "\n")
@@ -354,11 +360,28 @@ func (c *console) AddHistory(text string) {
 
 // Printf adds a formatted message to history
 func (c *console) Printf(format string, args ...any) {
+	if c == nil {
+		return
+	}
+
 	c.AddHistory(fmt.Sprintf(format, args...))
+}
+
+// Errorf adds a formatted error message to history
+func (c *console) Errorf(format string, args ...any) {
+	if c == nil {
+		return
+	}
+
+	c.AddHistory(fmt.Sprintf("[error] "+format, args...))
 }
 
 // ReadLine reads a line of input (blocking)
 func (c *console) ReadLine() (string, bool) {
+	if c == nil {
+		return "", false
+	}
+
 	select {
 	case line := <-c.inputCh:
 		return line, true
@@ -384,9 +407,8 @@ func (c *console) RPEL(p PeerInfo, pool *connPool) {
 		case "/quit", "/exit":
 			return
 		case "/peers":
-			for _, p := range peers {
-				c.Printf("- %s (%s) keyID=%d", p.ID, p.Addr, p.KeyID)
-			}
+			c.listPeers()
+
 			continue
 		}
 
@@ -394,39 +416,49 @@ func (c *console) RPEL(p PeerInfo, pool *connPool) {
 		if strings.HasPrefix(line, "@") {
 			toTag, msg, ok := splitFirstWord(line)
 			if !ok {
-				c.Printf("[error] usage: @peer <message>")
+				c.Errorf("usage: @peer <message>")
 				continue
 			}
 
 			toTag = strings.TrimPrefix(toTag, "@")
 			to := mustPeer(PeerID(toTag))
-			if to.ID == p.ID {
-				c.Printf("[error] can't send to self")
-				continue
-			}
-
-			// Clear queue for this peer
-			cleared := c.ClearQueue(to.ID)
-			if cleared > 0 {
-				c.Printf("[system] cleared %d messages from %s", cleared, to.ID)
-			}
-
-			respText, err := pool.SendRequest(to, msg)
-			if err != nil {
-				c.Printf("[error] send failed: %v", err)
-				continue
-			}
-
-			c.Printf("[reply from %s] %s", to.ID, respText)
+			c.sendTo(to, msg)
 			continue
 		}
 
 		// Otherwise: broadcast to everyone else.
-		count := len(peers) - 1 // Exclude self
+		count := len(pool.sessions)
 		if err := pool.Broadcast(p, line); err != nil {
-			c.Printf("[error] broadcast failed: %v", err)
+			c.Errorf("broadcast failed: %v", err)
 		} else {
-			c.Printf("[broadcast] sent to %d peers", count)
+			c.Printf("[broadcast] %s sent to %d peers: %s", c.self.ID, count, line)
 		}
 	}
+}
+
+func (c *console) listPeers() {
+	for _, p := range peers {
+		c.Printf("- %s (%s) keyID=%d", p.ID, p.Addr, p.KeyID)
+	}
+}
+
+func (c *console) sendTo(to PeerInfo, msg string) {
+	if c == nil {
+		return
+	}
+
+	if to.ID == c.self.ID {
+		c.Errorf("can't send to self")
+		return
+	}
+
+	// Clear queue for this peer
+	_ = c.ClearQueue(to.ID)
+	_, err := c.pool.SendRequest(to, msg)
+	if err != nil {
+		c.Errorf("send failed: %v", err)
+		return
+	}
+
+	c.Printf("[%s to %s] %s", c.self.ID, to.ID, msg)
 }
